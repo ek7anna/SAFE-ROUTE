@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SafeRoute - Intelligent Journey Planner</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #4361ee;
+            --danger: #ef233c;
+            --safe: #2ec4b6;
+        }
+        
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), 
+                        url('https://images.unsplash.com/photo-1483729558449-99ef09a8c325?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=2070&q=80');
+            background-size: cover;
+            background-attachment: fixed;
+            min-height: 100vh;
+            color: white;
+        }
+
+        #app-container {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            overflow: hidden;
+            margin-top: 30px;
+            margin-bottom: 30px;
+            color: #333;
+        }
+
+        #map {
+            height: 70vh;
+            border-radius: 0 10px 10px 0;
+            z-index: 1;
+        }
+
+        .sidebar {
+            height: 70vh;
+            padding: 25px;
+            overflow-y: auto;
+            background: rgba(255, 255, 255, 0.95);
+        }
+
+        .route-step {
+            border-left: 3px solid var(--primary);
+            padding-left: 15px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+            background: rgba(67, 97, 238, 0.05);
+            border-radius: 5px;
+            padding: 10px;
+        }
+
+        .route-step:hover {
+            background: rgba(67, 97, 238, 0.1);
+            transform: translateX(5px);
+        }
+
+        .route-alternative {
+            background: rgba(46, 196, 182, 0.1);
+            border-left: 3px solid var(--safe);
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .route-alternative:hover {
+            background: rgba(46, 196, 182, 0.2);
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            border: none;
+            padding: 12px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .btn-primary:hover {
+            background: #3a56d4;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(67, 97, 238, 0.3);
+        }
+
+        .navbar {
+            background: rgba(0, 0, 0, 0.7) !important;
+            backdrop-filter: blur(10px);
+        }
+
+        .alert-floating {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 350px;
+            z-index: 1000;
+            box-shadow: 0 5px 25px rgba(239, 35, 60, 0.3);
+            border: none;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 35, 60, 0.7); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(239, 35, 60, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 35, 60, 0); }
+        }
+
+        .pulse-dot {
+            width: 18px;
+            height: 18px;
+            background: #4285F4;
+            border-radius: 50%;
+            position: absolute;
+            animation: pulse 1.5s infinite;
+            box-shadow: 0 0 0 0 rgba(66, 133, 244, 0.7);
+        }
+
+        .leaflet-routing-container {
+            display: none !important;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: 10px;
+        }
+
+        .alternate-routes {
+            background: rgba(245, 245, 245, 0.9);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .alternate-header {
+            color: var(--primary);
+            border-bottom: 2px solid var(--primary);
+            padding-bottom: 8px;
+            margin-bottom: 15px;
+        }
+
+        .route-details {
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(0,0,0,0.03);
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+
+        .toggle-details {
+            width: 100%;
+            font-size: 0.8rem;
+        }
+
+        .danger-zone {
+            animation: dangerPulse 2s infinite;
+        }
+
+        @keyframes dangerPulse {
+            0% { opacity: 0.7; }
+            50% { opacity: 0.3; }
+            100% { opacity: 0.7; }
+        }
+
+        .danger-alert {
+            background-color: rgba(239, 35, 60, 0.1);
+            border-left: 3px solid var(--danger);
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-shield-alt me-2"></i>SafeRoute
+            </a>
+            <div class="d-flex">
+                <span class="navbar-text">
+                    <i class="fas fa-map-marked-alt me-2"></i>Intelligent Journey Planner
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container" id="app-container">
+        <div class="row g-0">
+            <div class="col-md-4">
+                <div class="sidebar">
+                    <h4 class="mb-4" style="color: var(--primary);">
+                        <i class="fas fa-route me-2"></i>Plan Your Journey
+                    </h4>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">From:</label>
+                        <div class="input-group">
+                            <button id="detect-location" class="btn btn-outline-primary">
+                                <i class="fas fa-location-arrow"></i>
+                            </button>
+                            <input type="text" id="source" class="form-control" placeholder="Current location">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">To:</label>
+                        <input type="text" id="destination" class="form-control" placeholder="Destination" >
+                    </div>
+                    
+                    <button id="find-route" class="btn btn-primary w-100 mb-4 py-2">
+                        <i class="fas fa-search me-2"></i>Find Safest Route
+                    </button>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <span id="danger-count">0</span> danger zones detected
+                    </div>
+                    
+                    <div class="alert alert-info mt-3">
+                        <i class="fas fa-cloud-sun me-2"></i>
+                        <span id="weather-info">Weather data loading...</span>
+                    </div>
+                    
+                    <hr>
+                    
+                    <h5 class="d-flex align-items-center">
+                        <i class="fas fa-directions me-2" style="color: var(--primary);"></i>
+                        <span>Route Guidance</span>
+                    </h5>
+                    <div id="route-instructions">
+                        <div class="text-muted">Enter your destination to see route instructions</div>
+                    </div>
+
+                    <div id="danger-alerts-container" class="mt-3">
+                        <!-- Danger alerts will appear here -->
+                    </div>
+
+                    <div class="alternate-routes mt-4">
+                        <h6 class="alternate-header">
+                            <i class="fas fa-route me-2"></i>Alternate Routes
+                        </h6>
+                        <div id="alternate-routes-container">
+                            <div class="text-muted small">Alternative routes will appear here</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-8">
+                <div id="map"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="alert-box" class="alert alert-warning alert-floating alert-dismissible fade show d-none">
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        <strong><i class="fas fa-exclamation-triangle me-2"></i>Danger Ahead!</strong>
+        <div id="alert-text"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
+    <script>
+        // Initialize map with default view
+        const map = L.map('map').setView([8.5590, 76.9065], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        // API Keys
+        const WEATHER_API_KEY = '5c827784b4684e764ab0db346b3fc370';
+        const TOMTOM_API_KEY = 'iXOEKSTO2zh9fMskxAuNAMQV7xPoo3ym';
+
+        // Global variables
+        let routingControl = null;
+        let dangerZones = [];
+        let userMarker = null;
+        let watchId = null;
+        let allRoutes = [];
+        let currentRouteIndex = 0;
+        let alertTimeout = null;
+        let routePolyline = null;
+        let currentWeather = null;
+
+        // DOM elements
+        const findRouteBtn = document.getElementById('find-route');
+        const sourceInput = document.getElementById('source');
+        const destInput = document.getElementById('destination');
+        const detectBtn = document.getElementById('detect-location');
+        const dangerCount = document.getElementById('danger-count');
+        const routeInstructions = document.getElementById('route-instructions');
+        const alternateRoutesContainer = document.getElementById('alternate-routes-container');
+        const alertBox = document.getElementById('alert-box');
+        const alertText = document.getElementById('alert-text');
+        const weatherInfo = document.getElementById('weather-info');
+        const dangerAlertsContainer = document.getElementById('danger-alerts-container');
+
+        // Weather functions
+        async function updateWeather(lat, lng) {
+            try {
+                const response = await fetch(
+                    `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${WEATHER_API_KEY}&units=metric`
+                );
+                const data = await response.json();
+                currentWeather = data;
+                weatherInfo.innerHTML = `
+                    <strong>${data.main.temp}°C</strong> | ${data.weather[0].description}
+                    <i class="fas fa-${getWeatherIcon(data.weather[0].main)} ms-2"></i>
+                    <div class="small">Wind: ${data.wind.speed} m/s | Humidity: ${data.main.humidity}%</div>
+                `;
+            } catch (error) {
+                console.error("Weather error:", error);
+                weatherInfo.innerHTML = 'Weather data unavailable';
+                currentWeather = null;
+            }
+        }
+
+        function getWeatherIcon(condition) {
+            const icons = {
+                'Clear': 'sun',
+                'Clouds': 'cloud',
+                'Rain': 'cloud-rain',
+                'Drizzle': 'cloud-rain',
+                'Thunderstorm': 'bolt',
+                'Snow': 'snowflake',
+                'Mist': 'smog',
+                'Smoke': 'smog',
+                'Haze': 'smog',
+                'Dust': 'smog',
+                'Fog': 'smog',
+                'Sand': 'smog',
+                'Ash': 'smog',
+                'Squall': 'wind',
+                'Tornado': 'poo-storm'
+            };
+            return icons[condition] || 'question';
+        }
+
+        // Live location tracking
+        function startLiveTracking() {
+            if (!navigator.geolocation) {
+                alert("Geolocation is not supported by your browser");
+                return;
+            }
+
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+            }
+
+            watchId = navigator.geolocation.watchPosition(
+                (position) => {
+                    const { latitude, longitude } = position.coords;
+                    
+                    if (!userMarker) {
+                        userMarker = L.marker([latitude, longitude], {
+                            icon: L.divIcon({
+                                className: 'live-location-marker',
+                                html: '<div class="pulse-dot"></div>',
+                                iconSize: [20, 20]
+                            }),
+                            zIndexOffset: 1000
+                        }).addTo(map).bindPopup("You are here");
+                    } else {
+                        userMarker.setLatLng([latitude, longitude]);
+                    }
+                    
+                    updateWeather(latitude, longitude);
+                    if (map.getZoom() > 10) {
+                        map.setView([latitude, longitude]);
+                    }
+                    checkDangerProximity(latitude, longitude);
+                },
+                (error) => {
+                    console.error("Geolocation error:", error);
+                    alert(`Location error: ${error.message}`);
+                },
+                {
+                    enableHighAccuracy: true,
+                    maximumAge: 10000,
+                    timeout: 5000
+                }
+            );
+        }
+
+        // Check if a point is near the route
+        function isPointNearRoute(point, routeCoordinates, maxDistance = 500) {
+            if (!routeCoordinates || routeCoordinates.length === 0) return false;
+            
+            const pointLatLng = L.latLng(point.lat, point.lng);
+            let minDistance = Infinity;
+            
+            for (let i = 0; i < routeCoordinates.length - 1; i++) {
+                const segmentStart = L.latLng(routeCoordinates[i].lat, routeCoordinates[i].lng);
+                const segmentEnd = L.latLng(routeCoordinates[i+1].lat, routeCoordinates[i+1].lng);
+                const distance = pointLatLng.distanceTo(segmentStart);
+                minDistance = Math.min(minDistance, distance);
+                if (minDistance <= maxDistance) return true;
+            }
+            
+            return minDistance <= maxDistance;
+        }
+
+        // Check proximity to danger zones
+        function checkDangerProximity(lat, lng) {
+            if (dangerZones.length === 0) {
+                // Show demo alert with dummy values
+                showDemoAlert();
+                return;
+            }
+            
+            const userPos = L.latLng(lat, lng);
+            let closestDanger = null;
+            let minDistance = Infinity;
+            
+            dangerZones.forEach(zone => {
+                const distance = userPos.distanceTo(zone.getLatLng());
+                if (distance < minDistance && distance < zone.options.radius) {
+                    minDistance = distance;
+                    closestDanger = zone;
+                }
+            });
+            
+            if (closestDanger && minDistance < 1000) {
+                const popupContent = closestDanger.getPopup().getContent();
+                const dangerType = popupContent.match(/<b>(.*?)<\/b>/)[1];
+                showAlert(`Approaching ${dangerType} in ${Math.round(minDistance)} meters`, closestDanger);
+            }
+        }
+
+        // Detect current location
+        detectBtn.addEventListener('click', () => {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords;
+                        sourceInput.value = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                        map.setView([latitude, longitude], 15);
+                        updateWeather(latitude, longitude);
+                        startLiveTracking();
+                    },
+                    (error) => {
+                        alert(`Error getting location: ${error.message}`);
+                    }
+                );
+            } else {
+                alert("Geolocation is not supported by your browser");
+            }
+        });
+
+        // Traffic incidents from TomTom
+        async function getTrafficIncidents(bbox) {
+            try {
+                const response = await fetch(
+                    `https://api.tomtom.com/traffic/services/4/incidentDetails?bbox=${bbox}&fields={incidents{type,geometry{type,coordinates},properties{iconCategory,magnitudeOfDelay}}}&key=${TOMTOM_API_KEY}`
+                );
+                const data = await response.json();
+                return data.incidents || [];
+            } catch (error) {
+                console.error("Traffic error:", error);
+                return [];
+            }
+        }
+
+        // Predict accident risk based on weather and traffic
+        function predictAccidentRisk(trafficIncident, weather) {
+            let riskScore = 0;
+            let riskType = "medium";
+            
+            // Traffic contribution
+            if (trafficIncident) {
+                const delay = trafficIncident.properties.magnitudeOfDelay;
+                riskScore += delay * 20; // Higher delay increases risk
+            }
+
+            // Weather contribution
+            if (weather) {
+                const condition = weather.weather[0].main.toLowerCase();
+                const windSpeed = weather.wind.speed;
+                
+                if (condition.includes('rain') || condition.includes('snow')) riskScore += 30;
+                if (condition.includes('fog') || condition.includes('mist')) riskScore += 40;
+                if (windSpeed > 15) riskScore += 20;
+            }
+
+            // Determine risk level
+            if (riskScore >= 60) riskType = "high";
+            return { score: riskScore, type: riskType };
+        }
+
+        // Generate random demo danger zones
+        function generateRandomDangerZones(routeCoords) {
+            const randomCount = Math.floor(Math.random() * 3) + 1;
+            const demoDangers = [
+                { name: "Construction Zone", risk: "high" },
+                { name: "Accident Area", risk: "high" },
+                { name: "Traffic Jam", risk: "medium" },
+                { name: "Road Closure", risk: "high" },
+                { name: "Heavy Congestion", risk: "medium" }
+            ];
+            const generatedZones = [];
+            
+            for (let i = 0; i < randomCount; i++) {
+                const randomIndex = Math.floor(Math.random() * routeCoords.length);
+                const randomDanger = demoDangers[Math.floor(Math.random() * demoDangers.length)];
+                const coord = routeCoords[randomIndex];
+                
+                const zone = {
+                    lat: coord.lat,
+                    lng: coord.lng,
+                    name: randomDanger.name,
+                    risk: randomDanger.risk
+                };
+                generatedZones.push(zone);
+            }
+            return generatedZones;
+        }
+
+        // Find route handler
+        findRouteBtn.addEventListener('click', async () => {
+            try {
+                const fromText = sourceInput.value.trim();
+                const toText = destInput.value.trim();
+                
+                if (!fromText || !toText) {
+                    throw new Error("Please enter both start and destination");
+                }
+
+                const startCoords = await parseCoordinates(fromText);
+                const endCoords = await parseCoordinates(toText);
+
+                // Clear previous
+                if (routingControl) {
+                    map.removeControl(routingControl);
+                }
+                if (routePolyline) {
+                    map.removeLayer(routePolyline);
+                }
+                dangerZones.forEach(zone => map.removeLayer(zone));
+                dangerZones = [];
+                alternateRoutesContainer.innerHTML = '';
+                routeInstructions.innerHTML = '<div class="text-muted">Calculating route...</div>';
+                dangerAlertsContainer.innerHTML = '';
+
+                // Create new route
+                routingControl = L.Routing.control({
+                    waypoints: [
+                        L.latLng(startCoords.lat, startCoords.lng),
+                        L.latLng(endCoords.lat, endCoords.lng)
+                    ],
+                    routeWhileDragging: true,
+                    showAlternatives: true,
+                    lineOptions: { 
+                        styles: [{ 
+                            color: 'red', 
+                            weight: 5,
+                            opacity: 1 
+                        }] 
+                    },
+                    altLineOptions: {
+                        styles: [
+                            {color: 'green', weight: 5, opacity: 0.7},
+                            {color: 'purple', weight: 5, opacity: 0.7}
+                        ]
+                    },
+                    show: false
+                }).addTo(map);
+
+                routingControl.on('routesfound', async (e) => {
+                    allRoutes = e.routes;
+                    currentRouteIndex = 0;
+                    startLiveTracking();
+                    
+                    const routeCoords = e.routes[0].coordinates;
+                    routePolyline = L.polyline(routeCoords, {color: 'blue', weight: 2, opacity: 0.5}).addTo(map);
+                    
+                    const lats = routeCoords.map(c => c.lat);
+                    const lngs = routeCoords.map(c => c.lng);
+                    const bbox = `${Math.min(...lngs)-0.1},${Math.min(...lats)-0.1},${Math.max(...lngs)+0.1},${Math.max(...lats)+0.1}`;
+                    
+                    const incidents = await getTrafficIncidents(bbox);
+                    let highRiskCount = 0;
+                    let mediumRiskCount = 0;
+
+                    if (incidents.length > 0) {
+                        incidents.forEach(incident => {
+                            const [lng, lat] = incident.geometry.coordinates;
+                            const name = incident.properties.iconCategory.replace(/([A-Z])/g, ' $1').trim();
+                            
+                            if (isPointNearRoute({lat, lng}, routeCoords)) {
+                                const risk = predictAccidentRisk(incident, currentWeather);
+                                const isHighRisk = risk.type === "high";
+                                
+                                const circle = L.circle([lat, lng], {
+                                    radius: isHighRisk ? 500 : 300,
+                                    color: isHighRisk ? 'red' : 'orange',
+                                    fillColor: isHighRisk ? '#f03' : '#fa0',
+                                    fillOpacity: 0.3,
+                                    weight: 2,
+                                    className: 'danger-zone'
+                                }).addTo(map).bindPopup(`<b>${name}</b><br>Risk: ${risk.type}`);
+                                
+                                dangerZones.push(circle);
+                                if (isHighRisk) highRiskCount++;
+                                else mediumRiskCount++;
+                                addDangerAlert(name, risk.type, circle);
+                            }
+                        });
+                    } else {
+                        const randomZones = generateRandomDangerZones(routeCoords);
+                        randomZones.forEach(danger => {
+                            const risk = predictAccidentRisk(null, currentWeather);
+                            const isHighRisk = risk.type === "high";
+                            
+                            const circle = L.circle([danger.lat, danger.lng], {
+                                radius: isHighRisk ? 500 : 300,
+                                color: isHighRisk ? 'red' : 'orange',
+                                fillColor: isHighRisk ? '#f03' : '#fa0',
+                                fillOpacity: 0.3,
+                                weight: 2,
+                                className: 'danger-zone'
+                            }).addTo(map).bindPopup(`<b>${danger.name}</b><br>Risk: ${risk.type}`);
+                            
+                            dangerZones.push(circle);
+                            if (isHighRisk) highRiskCount++;
+                            else mediumRiskCount++;
+                            addDangerAlert(danger.name, risk.type, circle);
+                        });
+                    }
+                    
+                    dangerCount.innerHTML = `<strong>${dangerZones.length} danger zones</strong> detected (${highRiskCount} high, ${mediumRiskCount} medium)`;
+                    updateRouteInstructions(e.routes[0]);
+                    showAlternateRoutes(e.routes);
+                });
+
+            } catch (error) {
+                console.error("Routing error:", error);
+                alert(`Error: ${error.message}`);
+            }
+        });
+
+        // Add danger alert to sidebar
+        function addDangerAlert(name, risk, zone) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'danger-alert';
+            alertDiv.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <strong><i class="fas fa-exclamation-triangle me-2" style="color: ${risk === 'high' ? 'var(--danger)' : 'orange'}"></i>${name}</strong>
+                    <span class="badge ${risk === 'high' ? 'bg-danger' : 'bg-warning'}">${risk}</span>
+                </div>
+                <div class="small mt-1">Click to view on map</div>
+            `;
+            
+            alertDiv.addEventListener('click', () => {
+                map.setView(zone.getLatLng(), 15);
+                zone.openPopup();
+            });
+            
+            dangerAlertsContainer.appendChild(alertDiv);
+        }
+
+        // Update route instructions
+        function updateRouteInstructions(route) {
+            routeInstructions.innerHTML = '';
+            
+            if (!route.instructions || route.instructions.length === 0) {
+                routeInstructions.innerHTML = '<div class="text-muted">No turn-by-turn instructions available</div>';
+                return;
+            }
+            
+            route.instructions.forEach(instruction => {
+                const step = document.createElement('div');
+                step.className = 'route-step';
+                step.innerHTML = `
+                    <strong>${instruction.text}</strong>
+                    <div class="text-muted small">${(instruction.distance/1000).toFixed(1)} km • ${Math.round(instruction.time/60)} min</div>
+                `;
+                routeInstructions.appendChild(step);
+            });
+        }
+
+        // Show alternate routes
+        function showAlternateRoutes(routes) {
+            alternateRoutesContainer.innerHTML = '';
+            
+            if (routes.length < 2) {
+                alternateRoutesContainer.innerHTML = '<div class="text-muted small">No alternative routes found</div>';
+                return;
+            }
+            
+            routes.forEach((route, index) => {
+                const altRoute = document.createElement('div');
+                altRoute.className = 'route-alternative';
+                altRoute.innerHTML = `
+                    <div class="d-flex justify-content-between">
+                        <strong>${index === 0 ? 'Recommended Route' : 'Option ' + index}</strong>
+                        <span class="badge ${index === 0 ? 'bg-danger' : 'bg-primary'}">${Math.round(route.summary.totalDistance/1000)} km • ${Math.round(route.summary.totalTime/60)} min</span>
+                    </div>
+                    <div class="small mt-1">${getRouteSummary(route)}</div>
+                    <div class="route-details" style="display:none;">
+                        ${route.instructions.map(inst => `
+                            <div class="small">• ${inst.text} (${(inst.distance/1000).toFixed(1)} km, ${Math.round(inst.time/60)} min)</div>
+                        `).join('')}
+                    </div>
+                    <button class="btn btn-sm ${index === 0 ? 'btn-outline-danger' : 'btn-outline-primary'} mt-2 toggle-details">Show Full Directions</button>
+                `;
+                
+                const toggleBtn = altRoute.querySelector('.toggle-details');
+                const detailsDiv = altRoute.querySelector('.route-details');
+                
+                toggleBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (detailsDiv.style.display === 'none') {
+                        detailsDiv.style.display = 'block';
+                        toggleBtn.textContent = 'Hide Directions';
+                    } else {
+                        detailsDiv.style.display = 'none';
+                        toggleBtn.textContent = 'Show Full Directions';
+                    }
+                });
+                
+                altRoute.addEventListener('click', () => {
+                    allRoutes.forEach((r, i) => {
+                        const isSelected = i === index;
+                        r.line.setStyle({
+                            opacity: isSelected ? 1 : 0.3,
+                            weight: isSelected ? 5 : 3
+                        });
+                    });
+                    currentRouteIndex = index;
+                    updateRouteInstructions(route);
+                });
+                
+                alternateRoutesContainer.appendChild(altRoute);
+            });
+        }
+
+        // Generate route summary
+        function getRouteSummary(route) {
+            const primaryRoads = new Set();
+            route.instructions.forEach(instruction => {
+                if (instruction.text.match(/highway|road|avenue|street|NH|SH/i)) {
+                    primaryRoads.add(instruction.text.split('onto')[1]?.trim() || instruction.text);
+                }
+            });
+            return Array.from(primaryRoads).slice(0, 3).join(' • ') || 'Main route';
+        }
+
+        // Show real alert for danger zones
+        function showAlert(message, dangerZone) {
+            if (alertTimeout) {
+                clearTimeout(alertTimeout);
+            }
+            
+            alertText.textContent = message;
+            alertBox.classList.remove('d-none');
+            
+            alertBox.style.animation = 'none';
+            void alertBox.offsetWidth;
+            alertBox.style.animation = 'pulse 1.5s infinite';
+            
+            if (dangerZone) {
+                map.setView(dangerZone.getLatLng(), 15);
+                dangerZone.openPopup();
+            }
+            
+            alertTimeout = setTimeout(() => {
+                alertBox.classList.add('d-none');
+            }, 5000);
+        }
+
+        // Show demo alert with dummy values
+        function showDemoAlert() {
+            if (alertTimeout) {
+                clearTimeout(alertTimeout);
+            }
+            
+            alertText.textContent = "Approaching Demo Accident Zone in 800 meters";
+            alertBox.classList.remove('d-none');
+            
+            alertBox.style.animation = 'none';
+            void alertBox.offsetWidth;
+            alertBox.style.animation = 'pulse 1.5s infinite';
+            
+            alertTimeout = setTimeout(() => {
+                alertBox.classList.add('d-none');
+            }, 5000);
+        }
+
+        // Helper functions
+        async function parseCoordinates(input) {
+            try {
+                if (input.includes(',')) {
+                    const [lat, lng] = input.split(',').map(Number);
+                    if (isNaN(lat) || isNaN(lng)) throw new Error("Invalid coordinates");
+                    return { lat, lng };
+                } else {
+                    const [lat, lng] = await geocodeAddress(input);
+                    return { lat, lng };
+                }
+            } catch (e) {
+                throw new Error(`Location error: ${e.message}`);
+            }
+        }
+
+        async function geocodeAddress(address) {
+            try {
+                const response = await fetch(
+                    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json`
+                );
+                const data = await response.json();
+                if (!data.length) throw new Error("Location not found");
+                return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+            } catch (e) {
+                throw new Error(`Geocoding failed: ${e.message}`);
+            }
+        }
+
+        // Get location on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords;
+                        sourceInput.value = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                        map.setView([latitude, longitude], 15);
+                        updateWeather(latitude, longitude);
+                        startLiveTracking();
+                    },
+                    (error) => {
+                        console.error("Error getting location:", error);
+                        sourceInput.value = "8.5590, 76.9065";
+                        map.setView([8.5590, 76.9065], 13);
+                        updateWeather(8.5590, 76.9065);
+                    }
+                );
+            } else {
+                sourceInput.value = "8.5590, 76.9065";
+                map.setView([8.5590, 76.9065], 13);
+                updateWeather(8.5590, 76.9065);
+            }
+        });
+    </script>
+</body>
+</html>
